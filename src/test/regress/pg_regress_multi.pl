@@ -31,6 +31,7 @@ sub Usage()
     print "  --pgxsdir           Path to the PGXS directory\n";
     print "  --load-extension    Extensions to install in all nodes\n";
     print "  --server-option     Config option to pass to the server\n";
+    print "  --valgrind          Run server via valgrind\n";
     exit 1;
 }
 
@@ -46,6 +47,7 @@ my %fdws = ();
 my %fdwServers = ();
 my %functions = ();
 my %operators = ();
+my $valgrind = 0;
 
 GetOptions(
     'bindir=s' => \$bindir,
@@ -54,6 +56,7 @@ GetOptions(
     'majorversion=s' => \$majorversion,
     'load-extension=s' => \@extensions,
     'server-option=s' => \@userPgOptions,
+    'valgrind' => \$valgrind,
     'help' => sub { Usage() });
 
 # Update environment to include [DY]LD_LIBRARY_PATH/LIBDIR/etc -
@@ -70,6 +73,66 @@ if (defined $libdir)
     $ENV{LIBPATH} = "$libdir:".($ENV{LIBPATH} || '');
     $ENV{PATH} = "$libdir:".($ENV{PATH} || '');
 }
+
+# valgrind starts slow, need to increase timeout
+if ($valgrind)
+{
+    $ENV{PGCTLTIMEOUT} = '360';
+}
+
+# We don't want valgrind to run pg_ctl itself, as that'd trigger a lot
+# of spurious OS failures, e.g. in bash. So instead we have to replace
+# the postgres binary with a wrapper that exec's valgrind, which in
+# turn then executes postgres.  That's unfortunately at the moment the
+# only reliable way to do this.
+#
+# FIXME: don't hardcode paths to a) valgrind b) my home directory, for
+# valgrind.supp.
+sub replace_postgres
+{
+    if (-e "$bindir/postgres.orig")
+    {
+	print "wrapper exists\n";
+    }
+    else
+    {
+	print "moving $bindir/postgres to $bindir/postgres.orig\n";
+	rename "$bindir/postgres", "$bindir/postgres.orig"
+	    or die "Could not move postgres out of the way";
+    }
+
+    sysopen my $fh, "$bindir/postgres", O_CREAT|O_TRUNC|O_RDWR, 0700
+	or die "Could not create postgres wrapper at $bindir/postgres";
+    print $fh <<"END";
+#!/bin/bash
+exec /usr/bin/valgrind \\
+    --quiet \\
+    --suppressions=/home/andres/src/postgresql-9.5/src/tools/valgrind.supp \\
+    --trace-children=yes --track-origins=yes --read-var-info=yes \\
+    --leak-check=no \\
+    --error-exitcode=128 \\
+    --error-markers=VALGRINDERROR-BEGIN,VALGRINDERROR-END \\
+    $bindir/postgres.orig \\
+    "\$@"
+END
+    close $fh;
+}
+
+# revert changes replace_postgres() performed
+sub revert_replace_postgres
+{
+    if (-e "$bindir/postgres.orig")
+    {
+	print "wrapper exists, removing\n";
+	print "moving $bindir/postgres.orig to $bindir/postgres\n";
+	rename "$bindir/postgres.orig", "$bindir/postgres"
+	    or die "Could not move postgres back";
+    }
+}
+
+# always want to call initdb under normal postgres, so revert from a
+# partial run, even if we're now not using valgrind.
+revert_replace_postgres();
 
 # Set some default configuration options
 my $masterPort = 57636;
@@ -201,6 +264,18 @@ END
     {
         ShutdownServers();
     }
+
+    # At the end of a run, replace redirected binary with original again
+    if ($valgrind)
+    {
+	revert_replace_postgres();
+    }
+}
+
+# want to use valgrind, replace binary before starting server
+if ($valgrind)
+{
+    replace_postgres();
 }
 
 # Start servers
