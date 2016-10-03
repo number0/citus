@@ -107,7 +107,7 @@ for my $option (@userPgOptions)
 }
 
 #define data types as a name->definition
-%dataTypes = ('dummy_type', '(i integer)', 
+%dataTypes = ('dummy_type', '(i integer)',
                'order_side', ' ENUM (\'buy\', \'sell\')',
                'test_composite_type', '(i integer, i2 integer)',
                'bug_status', ' ENUM (\'new\', \'open\', \'closed\')');
