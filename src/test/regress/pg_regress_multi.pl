@@ -32,6 +32,9 @@ sub Usage()
     print "  --load-extension    Extensions to install in all nodes\n";
     print "  --server-option     Config option to pass to the server\n";
     print "  --valgrind          Run server via valgrind\n";
+    print "  --valgrind-path     Path to the valgrind executable\n";
+    print "  --pg_ctl-timeout    Timeout for pg_ctl\n";
+    print "  --pgsrcdir          Path to the postgresql source\n";
     exit 1;
 }
 
@@ -48,6 +51,9 @@ my %fdwServers = ();
 my %functions = ();
 my %operators = ();
 my $valgrind = 0;
+my $valgrind_path = "valgrind";
+my $pg_ctl_timeout = undef;
+my $pgsrcdir = "";
 
 GetOptions(
     'bindir=s' => \$bindir,
@@ -57,6 +63,9 @@ GetOptions(
     'load-extension=s' => \@extensions,
     'server-option=s' => \@userPgOptions,
     'valgrind' => \$valgrind,
+    'valgrind-path=s' => \$valgrind_path,
+    'pg_ctl-timeout=s' => \$pg_ctl_timeout,
+    'pgsrcdir=s' => \$pgsrcdir, 
     'help' => sub { Usage() });
 
 # Update environment to include [DY]LD_LIBRARY_PATH/LIBDIR/etc -
@@ -75,9 +84,9 @@ if (defined $libdir)
 }
 
 # valgrind starts slow, need to increase timeout
-if ($valgrind)
+if (defined $pg_ctl_timeout)
 {
-    $ENV{PGCTLTIMEOUT} = '360';
+    $ENV{PGCTLTIMEOUT} = '$pg_ctl_timeout';
 }
 
 # We don't want valgrind to run pg_ctl itself, as that'd trigger a lot
@@ -105,9 +114,9 @@ sub replace_postgres
 	or die "Could not create postgres wrapper at $bindir/postgres";
     print $fh <<"END";
 #!/bin/bash
-exec /usr/bin/valgrind \\
+exec $valgrind_path \\
     --quiet \\
-    --suppressions=/home/andres/src/postgresql-9.5/src/tools/valgrind.supp \\
+    --suppressions=$pgsrcdir/src/tools/valgrind.supp \\
     --trace-children=yes --track-origins=yes --read-var-info=yes \\
     --leak-check=no \\
     --error-exitcode=128 \\

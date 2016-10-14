@@ -51,6 +51,7 @@ check-multi: all tempinstall-main
 
 check-multi-vg: all tempinstall-main
 	$(pg_regress_multi_check) --load-extension=citus --valgrind \
+	--pg_ctl-timeout=360 --pgsrcdir=$(abs_top_srcdir) --valgrind-path=valgrind
 	-- $(MULTI_REGRESS_OPTS) --schedule=$(citus_abs_srcdir)/multi_schedule $(EXTRA_TESTS)
 
 check-multi-task-tracker-extra: all tempinstall-main
