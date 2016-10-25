@@ -208,3 +208,150 @@ INSERT INTO referencing_table VALUES(null, 2);
 SELECT * FROM referencing_table;
 DROP TABLE referencing_table;
 DROP TABLE referenced_table;
+
+
+-- Similar tests, but this time we push foreign key constraints created by ALTER TABLE queries
+-- create tables
+CREATE TABLE referenced_table(id int UNIQUE, test_column int, PRIMARY KEY(id, test_column));
+SELECT master_create_distributed_table('referenced_table', 'id', 'hash');
+SELECT master_create_worker_shards('referenced_table', 4, 1);
+
+CREATE TABLE referencing_table(id int, ref_id int);
+SELECT master_create_distributed_table('referencing_table', 'ref_id', 'hash');
+SELECT master_create_worker_shards('referencing_table', 4, 1);
+
+
+-- test foreign constraint creation
+-- test foreign constraint creation with not supported parameters
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON DELETE SET NULL;
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON DELETE SET DEFAULT;
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON UPDATE SET NULL;
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON UPDATE SET DEFAULT;
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON UPDATE CASCADE;
+
+-- test foreign constraint creation with multiple subcommands
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id),
+							  ADD CONSTRAINT test_constraint FOREIGN KEY(id) REFERENCES referenced_table(test_column);
+
+-- test foreign constraint creation without giving explicit name
+ALTER TABLE referencing_table ADD FOREIGN KEY(ref_id) REFERENCES referenced_table(id);
+
+-- test foreign constraint creation on NOT co-located tables
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id);
+
+-- create co-located tables
+DROP TABLE referencing_table;
+DROP TABLE referenced_table;
+CREATE TABLE referenced_table(id int UNIQUE, test_column int, PRIMARY KEY(id, test_column));
+CREATE TABLE referencing_table(id int, ref_id int);
+SELECT create_distributed_table('referenced_table', 'id', 'hash');
+SELECT create_distributed_table('referencing_table', 'ref_id', 'hash');
+
+-- test foreign constraint creation on non-partition columns
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(id) REFERENCES referenced_table(id);
+
+-- test foreign constraint creation while column list are in incorrect order
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(id, ref_id) REFERENCES referenced_table(id, test_column);
+
+-- test foreign constraint creation while column list are not in same length
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id, test_column);
+
+-- test foreign constraint creation while existing tables does not satisfy the constraint
+INSERT INTO referencing_table VALUES(1, 1);
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id);
+
+-- test foreign constraint with correct conditions
+DELETE FROM referencing_table WHERE ref_id = 1;
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id);
+
+
+-- test inserts
+-- test insert to referencing table while there is NO corresponding value in referenced table
+INSERT INTO referencing_table VALUES(1, 1);
+
+-- test insert to referencing while there is corresponding value in referenced table
+INSERT INTO referenced_table VALUES(1, 1);
+INSERT INTO referencing_table VALUES(1, 1);
+
+
+-- test deletes
+-- test delete from referenced table while there is corresponding value in referencing table
+DELETE FROM referenced_table WHERE id = 1;
+
+-- test delete from referenced table while there is NO corresponding value in referencing table
+DELETE FROM referencing_table WHERE ref_id = 1;
+DELETE FROM referenced_table WHERE id = 1;
+
+
+-- test DROP CONSTRAINT
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
+
+
+-- test foreign constraint options
+-- test ON DELETE CASCADE
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON DELETE CASCADE;
+INSERT INTO referenced_table VALUES(1, 1);
+INSERT INTO referencing_table VALUES(1, 1);
+DELETE FROM referenced_table WHERE id = 1;
+SELECT * FROM referencing_table;
+SELECT * FROM referenced_table;
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
+
+-- test ON DELETE NO ACTION + DEFERABLE + INITIALLY DEFERRED
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED;
+INSERT INTO referenced_table VALUES(1, 1);
+INSERT INTO referencing_table VALUES(1, 1);
+DELETE FROM referenced_table WHERE id = 1;
+BEGIN;
+DELETE FROM referenced_table WHERE id = 1;
+DELETE FROM referencing_table WHERE ref_id = 1;
+COMMIT;
+SELECT * FROM referencing_table;
+SELECT * FROM referenced_table;
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
+
+-- test ON DELETE RESTRICT
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id) REFERENCES referenced_table(id) ON DELETE RESTRICT;
+INSERT INTO referenced_table VALUES(1, 1);
+INSERT INTO referencing_table VALUES(1, 1);
+BEGIN;
+DELETE FROM referenced_table WHERE id = 1;
+DELETE FROM referencing_table WHERE ref_id = 1;
+COMMIT;
+SELECT * FROM referencing_table;
+SELECT * FROM referenced_table;
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
+
+-- test ON UPDATE NO ACTION + DEFERABLE + INITIALLY DEFERRED
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id, id) REFERENCES referenced_table(id, test_column) ON UPDATE NO ACTION DEFERRABLE INITIALLY DEFERRED;
+UPDATE referenced_table SET test_column = 10 WHERE id = 1;
+BEGIN;
+UPDATE referenced_table SET test_column = 10 WHERE id = 1;
+UPDATE referencing_table SET id = 10 WHERE ref_id = 1;
+COMMIT;
+SELECT * FROM referencing_table;
+SELECT * FROM referenced_table;
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
+
+-- test ON UPDATE RESTRICT
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id, id) REFERENCES referenced_table(id, test_column) ON UPDATE RESTRICT;
+BEGIN;
+UPDATE referenced_table SET test_column = 20 WHERE id = 1;
+UPDATE referencing_table SET id = 20 WHERE ref_id = 1;
+COMMIT;
+SELECT * FROM referencing_table;
+SELECT * FROM referenced_table;
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
+
+-- test MATCH SIMPLE
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id, id) REFERENCES referenced_table(id, test_column) MATCH SIMPLE;
+INSERT INTO referencing_table VALUES(null, 2);
+SELECT * FROM referencing_table;
+DELETE FROM referencing_table WHERE ref_id = 2;
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
+
+-- test MATCH FULL
+ALTER TABLE referencing_table ADD CONSTRAINT test_constraint FOREIGN KEY(ref_id, id) REFERENCES referenced_table(id, test_column) MATCH FULL;
+INSERT INTO referencing_table VALUES(null, 2);
+SELECT * FROM referencing_table;
+ALTER TABLE referencing_table DROP CONSTRAINT test_constraint;
