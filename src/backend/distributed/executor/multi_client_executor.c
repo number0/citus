@@ -93,6 +93,7 @@ MultiClientConnect(const char *nodeName, uint32 nodePort, const char *nodeDataba
 	int32 connectionId = AllocateConnectionId();
 	char *effectiveDatabaseName = NULL;
 	char *effectiveUserName = NULL;
+	int timeoutInSeconds = NodeConnectionTimeout / 1000;
 
 	if (XactModificationLevel > XACT_MODIFICATION_NONE)
 	{
@@ -136,7 +137,7 @@ MultiClientConnect(const char *nodeName, uint32 nodePort, const char *nodeDataba
 	snprintf(connInfoString, STRING_BUFFER_SIZE, CONN_INFO_TEMPLATE,
 			 nodeName, nodePort,
 			 effectiveDatabaseName, effectiveUserName,
-			 CLIENT_CONNECT_TIMEOUT);
+			 timeoutInSeconds);
 
 	/* establish synchronous connection to worker node */
 	connection = PQconnectdb(connInfoString);
@@ -173,6 +174,7 @@ MultiClientConnectStart(const char *nodeName, uint32 nodePort, const char *nodeD
 	char connInfoString[STRING_BUFFER_SIZE];
 	ConnStatusType connStatusType = CONNECTION_BAD;
 	char *userName = CurrentUserName();
+	int timeoutInSeconds = NodeConnectionTimeout / 1000;
 
 	int32 connectionId = AllocateConnectionId();
 	if (connectionId == INVALID_CONNECTION_ID)
@@ -190,7 +192,7 @@ MultiClientConnectStart(const char *nodeName, uint32 nodePort, const char *nodeD
 
 	/* transcribe connection paremeters to string */
 	snprintf(connInfoString, STRING_BUFFER_SIZE, CONN_INFO_TEMPLATE,
-			 nodeName, nodePort, nodeDatabase, userName, CLIENT_CONNECT_TIMEOUT);
+			 nodeName, nodePort, nodeDatabase, userName, timeoutInSeconds);
 
 	/* prepare asynchronous request for worker node connection */
 	connection = PQconnectStart(connInfoString);

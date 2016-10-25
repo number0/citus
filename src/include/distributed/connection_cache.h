@@ -19,9 +19,6 @@
 #include "nodes/pg_list.h"
 #include "utils/hsearch.h"
 
-/* maximum duration to wait for connection */
-#define CLIENT_CONNECT_TIMEOUT_SECONDS "5"
-
 /* maximum (textual) lengths of hostname and port */
 #define MAX_NODE_LENGTH 255
 #define MAX_PORT_LENGTH 10
@@ -64,6 +61,9 @@ typedef enum
 
 /* state needed to prevent new connections during modifying transactions */
 extern XactModificationType XactModificationLevel;
+
+/* maximum duration to wait for connection */
+extern int NodeConnectionTimeout;
 
 
 /* function declarations for obtaining and using a connection */

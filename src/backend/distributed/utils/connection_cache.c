@@ -33,6 +33,9 @@
 /* state needed to keep track of operations used during a transaction */
 XactModificationType XactModificationLevel = XACT_MODIFICATION_NONE;
 
+/* maximum duration to wait for connection */
+int NodeConnectionTimeout = 5000;
+
 /*
  * NodeConnectionHash is the connection hash itself. It begins uninitialized.
  * The first call to GetOrEstablishConnection triggers hash creation.
@@ -363,18 +366,21 @@ ConnectToNode(char *nodeName, int32 nodePort, char *nodeUser)
 	const char *clientEncoding = GetDatabaseEncodingName();
 	const char *dbname = get_database_name(MyDatabaseId);
 	int attemptIndex = 0;
+	int timeoutInSeconds = NodeConnectionTimeout / 1000;
 
 	const char *keywordArray[] = {
 		"host", "port", "fallback_application_name",
 		"client_encoding", "connect_timeout", "dbname", "user", NULL
 	};
 	char nodePortString[12];
+	char timeoutInSecondsString[12];
 	const char *valueArray[] = {
 		nodeName, nodePortString, "citus", clientEncoding,
-		CLIENT_CONNECT_TIMEOUT_SECONDS, dbname, nodeUser, NULL
+		timeoutInSecondsString, dbname, nodeUser, NULL
 	};
 
 	sprintf(nodePortString, "%d", nodePort);
+	sprintf(timeoutInSecondsString, "%d", timeoutInSeconds);
 
 	Assert(sizeof(keywordArray) == sizeof(valueArray));
 
