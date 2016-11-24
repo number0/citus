@@ -97,7 +97,7 @@ $(EXTENSION)--6.0-18.sql: $(EXTENSION)--6.0-17.sql $(EXTENSION)--6.0-17--6.0-18.
 
 NO_PGXS = 1
 
-SHLIB_LINK = $(libpq)
+SHLIB_LINK += $(libpq)
 
 include $(citus_top_builddir)/Makefile.global
 

@@ -17,6 +17,12 @@ postgres_abs_builddir:=@POSTGRES_BUILDDIR@
 PG_CONFIG:=@PG_CONFIG@
 PGXS:=$(shell $(PG_CONFIG) --pgxs)
 
+ifeq ($(enable_coverage),yes)
+	export PG_CPPFLAGS += -ftest-coverage -fprofile-arcs
+	export SHLIB_LINK += -ftest-coverage -fprofile-arcs
+	export EXTRA_CLEAN += *.gcno
+endif
+
 # Support for VPATH builds (i.e. builds from outside the source tree)
 vpath_build=@vpath_build@
 ifeq ($(vpath_build),yes)
