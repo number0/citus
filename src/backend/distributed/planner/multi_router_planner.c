@@ -146,26 +146,12 @@ MultiRouterPlanCreate(Query *originalQuery, Query *query,
 					  RelationRestrictionContext *restrictionContext)
 {
 	MultiPlan *multiPlan = NULL;
-	List *rangeTableList = NIL;
-
-/*	ListCell *rangeTableCell = NULL; */
-
 	bool routerPlannable = MultiRouterPlannableQuery(query, taskExecutorType,
 													 restrictionContext);
 	if (!routerPlannable)
 	{
 		return NULL;
 	}
-
-	rangeTableList = originalQuery->rtable;
-
-	/*
-	 * foreach(rangeTableCell, rangeTableList)
-	 * {
-	 *  RangeTblEntry *rte = (RangeTblEntry *) lfirst(rangeTableCell);
-	 *  ereport(WARNING, (errmsg("RTE : Relid : %d, rtekind : %d, relkind : %c", (int) rte->relid, (int) rte->rtekind, rte->relkind)));
-	 * }
-	 */
 
 	if (InsertSelectQuery(originalQuery))
 	{
