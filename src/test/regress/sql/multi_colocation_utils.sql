@@ -241,6 +241,29 @@ CREATE SCHEMA schema_collocation;
 CREATE TABLE schema_collocation.table4_groupE ( id int );
 SELECT create_distributed_table('schema_collocation.table4_groupE', 'id');
 
+-- test colocate_with option
+CREATE TABLE table1_group_none_1 ( id int );
+SELECT create_distributed_table('table1_group_none_1', 'id', colocate_with => 'none');
+
+CREATE TABLE table2_group_none_1 ( id int );
+SELECT create_distributed_table('table2_group_none_1', 'id', colocate_with => 'table1_group_none_1');
+
+CREATE TABLE table1_group_none_2 ( id int );
+SELECT create_distributed_table('table1_group_none_2', 'id', colocate_with => 'none');
+
+CREATE TABLE table4_groupE ( id int );
+SELECT create_distributed_table('table4_groupE', 'id', colocate_with => 'default');
+
+SET citus.shard_count = 3;
+
+-- check that this new configuration does not have a default group
+CREATE TABLE table1_group_none_3 ( id int );
+SELECT create_distributed_table('table1_group_none_3', 'id', colocate_with => 'none');
+
+-- a new table does not use a non-default group
+CREATE TABLE table1_group_default ( id int );
+SELECT create_distributed_table('table1_group_default', 'id');
+
 -- check worker table schemas
 \c - - - :worker_1_port
 \d table3_groupE_1300050
