@@ -147,6 +147,7 @@ MultiRouterPlanCreate(Query *originalQuery, Query *query,
 {
 	MultiPlan *multiPlan = NULL;
 	List *rangeTableList = NIL;
+
 /*	ListCell *rangeTableCell = NULL; */
 
 	bool routerPlannable = MultiRouterPlannableQuery(query, taskExecutorType,
@@ -159,12 +160,12 @@ MultiRouterPlanCreate(Query *originalQuery, Query *query,
 	rangeTableList = originalQuery->rtable;
 
 	/*
-	foreach(rangeTableCell, rangeTableList)
-	{
-		RangeTblEntry *rte = (RangeTblEntry *) lfirst(rangeTableCell);
-		ereport(WARNING, (errmsg("RTE : Relid : %d, rtekind : %d, relkind : %c", (int) rte->relid, (int) rte->rtekind, rte->relkind)));
-	}
-*/
+	 * foreach(rangeTableCell, rangeTableList)
+	 * {
+	 *  RangeTblEntry *rte = (RangeTblEntry *) lfirst(rangeTableCell);
+	 *  ereport(WARNING, (errmsg("RTE : Relid : %d, rtekind : %d, relkind : %c", (int) rte->relid, (int) rte->rtekind, rte->relkind)));
+	 * }
+	 */
 
 	if (InsertSelectQuery(originalQuery))
 	{
@@ -787,7 +788,7 @@ FindOriginalTableId(Var *targetVar, Query *query)
 	List *rangeTableEntryList = query->rtable;
 	RangeTblEntry *rte = NULL;
 
-	rte = list_nth(rangeTableEntryList, targetVar->varno -1);
+	rte = list_nth(rangeTableEntryList, targetVar->varno - 1);
 
 	if (rte->rtekind == RTE_RELATION)
 	{
@@ -797,7 +798,7 @@ FindOriginalTableId(Var *targetVar, Query *query)
 	{
 		Query *subquery = rte->subquery;
 		TargetEntry *subqueryTargetEntry = list_nth(subquery->targetList,
-				targetVar->varattno - 1);
+													targetVar->varattno - 1);
 
 		if (IsA(subqueryTargetEntry->expr, Var))
 		{
@@ -810,6 +811,7 @@ FindOriginalTableId(Var *targetVar, Query *query)
 
 	return tableId;
 }
+
 
 /*
  * ErrorIfInsertPartitionColumnDoesNotMatchSelect checks whether the INSERTed table's
@@ -862,9 +864,10 @@ ErrorIfInsertPartitionColumnDoesNotMatchSelect(Query *query, RangeTblEntry *inse
 			}
 
 			partitionColumnsMatch = true;
-			*selectPartitionColumnTableId = FindOriginalTableId((Var *) subqeryTargetEntry->expr, subquery);
+			*selectPartitionColumnTableId = FindOriginalTableId(
+				(Var *) subqeryTargetEntry->expr, subquery);
 
-			//*selectPartitionColumnTableId = subqeryTargetEntry->resorigtbl;
+			/**selectPartitionColumnTableId = subqeryTargetEntry->resorigtbl; */
 
 			break;
 		}

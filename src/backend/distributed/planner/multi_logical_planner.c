@@ -1595,7 +1595,8 @@ ExtractRangeTableRelationWalker(Node *node, List **rangeTableRelationList)
 	foreach(rangeTableCell, rangeTableList)
 	{
 		RangeTblEntry *rangeTableEntry = (RangeTblEntry *) lfirst(rangeTableCell);
-//		ereport(WARNING, (errmsg("RTE : %s", nodeToString(rangeTableEntry))));
+
+/*		ereport(WARNING, (errmsg("RTE : %s", nodeToString(rangeTableEntry)))); */
 		if (rangeTableEntry->rtekind == RTE_RELATION && rangeTableEntry->relkind == 'r')
 		{
 			(*rangeTableRelationList) = lappend(*rangeTableRelationList, rangeTableEntry);
