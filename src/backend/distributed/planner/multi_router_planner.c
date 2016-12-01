@@ -146,6 +146,8 @@ MultiRouterPlanCreate(Query *originalQuery, Query *query,
 					  RelationRestrictionContext *restrictionContext)
 {
 	MultiPlan *multiPlan = NULL;
+	List *rangeTableList = NIL;
+/*	ListCell *rangeTableCell = NULL; */
 
 	bool routerPlannable = MultiRouterPlannableQuery(query, taskExecutorType,
 													 restrictionContext);
@@ -153,6 +155,16 @@ MultiRouterPlanCreate(Query *originalQuery, Query *query,
 	{
 		return NULL;
 	}
+
+	rangeTableList = originalQuery->rtable;
+
+	/*
+	foreach(rangeTableCell, rangeTableList)
+	{
+		RangeTblEntry *rte = (RangeTblEntry *) lfirst(rangeTableCell);
+		ereport(WARNING, (errmsg("RTE : Relid : %d, rtekind : %d, relkind : %c", (int) rte->relid, (int) rte->rtekind, rte->relkind)));
+	}
+*/
 
 	if (InsertSelectQuery(originalQuery))
 	{
@@ -627,6 +639,20 @@ ErrorIfInsertSelectQueryNotSupported(Query *queryTree, RangeTblEntry *insertRte,
 {
 	Query *subquery = NULL;
 	Oid selectPartitionColumnTableId = InvalidOid;
+	int resultRelation = queryTree->resultRelation;
+
+	if (resultRelation != 1)
+	{
+		RangeTblEntry *firstRte = rt_fetch(1, queryTree->rtable);
+		if (firstRte->relkind == 'v')
+		{
+			ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("cannot perform distributed planning for the given "
+								   "modification"),
+							errdetail("Cannot modify views")));
+		}
+	}
+
 
 	/* we only do this check for INSERT ... SELECT queries */
 	AssertArg(InsertSelectQuery(queryTree));
@@ -754,6 +780,37 @@ ErrorIfMultiTaskRouterSelectQueryUnsupported(Query *query)
 }
 
 
+static Oid
+FindOriginalTableId(Var *targetVar, Query *query)
+{
+	Oid tableId = InvalidOid;
+	List *rangeTableEntryList = query->rtable;
+	RangeTblEntry *rte = NULL;
+
+	rte = list_nth(rangeTableEntryList, targetVar->varno -1);
+
+	if (rte->rtekind == RTE_RELATION)
+	{
+		tableId = rte->relid;
+	}
+	else if (rte->rtekind == RTE_SUBQUERY)
+	{
+		Query *subquery = rte->subquery;
+		TargetEntry *subqueryTargetEntry = list_nth(subquery->targetList,
+				targetVar->varattno - 1);
+
+		if (IsA(subqueryTargetEntry->expr, Var))
+		{
+			Var *subqueryVar = (Var *) subqueryTargetEntry->expr;
+			tableId = FindOriginalTableId(subqueryVar, subquery);
+		}
+	}
+
+	Assert(tableId != InvalidOid);
+
+	return tableId;
+}
+
 /*
  * ErrorIfInsertPartitionColumnDoesNotMatchSelect checks whether the INSERTed table's
  * partition column value matches with the any of the SELECTed table's partition column.
@@ -805,7 +862,9 @@ ErrorIfInsertPartitionColumnDoesNotMatchSelect(Query *query, RangeTblEntry *inse
 			}
 
 			partitionColumnsMatch = true;
-			*selectPartitionColumnTableId = subqeryTargetEntry->resorigtbl;
+			*selectPartitionColumnTableId = FindOriginalTableId((Var *) subqeryTargetEntry->expr, subquery);
+
+			//*selectPartitionColumnTableId = subqeryTargetEntry->resorigtbl;
 
 			break;
 		}
@@ -968,6 +1027,18 @@ ErrorIfModifyQueryNotSupported(Query *queryTree)
 	CmdType commandType = queryTree->commandType;
 	Assert(commandType == CMD_INSERT || commandType == CMD_UPDATE ||
 		   commandType == CMD_DELETE);
+
+	if (queryTree->resultRelation != 1)
+	{
+		RangeTblEntry *firstRte = rt_fetch(1, queryTree->rtable);
+		if (firstRte->relkind == 'v')
+		{
+			ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+							errmsg("cannot perform distributed planning for the given "
+								   "modification"),
+							errdetail("Cannot modify views")));
+		}
+	}
 
 	/*
 	 * Reject subqueries which are in SELECT or WHERE clause.
@@ -2250,7 +2321,7 @@ UpdateRelationNames(Node *node, RelationRestrictionContext *restrictionContext)
 
 	newRte = (RangeTblEntry *) node;
 
-	if (newRte->rtekind != RTE_RELATION)
+	if (newRte->rtekind != RTE_RELATION || newRte->relkind != 'r')
 	{
 		return false;
 	}

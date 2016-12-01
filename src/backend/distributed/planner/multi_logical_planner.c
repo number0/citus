@@ -299,7 +299,8 @@ MultiPlanTree(Query *queryTree)
 		 * elements.
 		 */
 		joinClauseList = JoinClauseList(whereClauseList);
-		tableEntryList = TableEntryList(rangeTableList);
+
+		tableEntryList = ActiveTableEntryList(queryTree);
 
 		/* build the list of multi table nodes */
 		tableNodeList = MultiTableNodeList(tableEntryList, rangeTableList);
@@ -1020,6 +1021,40 @@ TableEntryList(List *rangeTableList)
 }
 
 
+List *
+ActiveTableEntryList(Query *query)
+{
+	List *tableEntryList = NIL;
+	List *rangeTableList = query->rtable;
+	List *joinTreeTableIndexList = NIL;
+	ListCell *joinTreeTableIndexCell = NULL;
+
+	ExtractRangeTableIndexWalker((Node *) query->jointree, &joinTreeTableIndexList);
+	foreach(joinTreeTableIndexCell, joinTreeTableIndexList)
+	{
+		/*
+		 * Join tree's range table index starts from 1 in the query tree. But,
+		 * list indexes start from 0.
+		 */
+		int joinTreeTableIndex = lfirst_int(joinTreeTableIndexCell);
+		int rangeTableListIndex = joinTreeTableIndex - 1;
+		RangeTblEntry *rangeTableEntry =
+			(RangeTblEntry *) list_nth(rangeTableList, rangeTableListIndex);
+
+		if (rangeTableEntry->rtekind == RTE_RELATION)
+		{
+			TableEntry *tableEntry = (TableEntry *) palloc0(sizeof(TableEntry));
+			tableEntry->relationId = rangeTableEntry->relid;
+			tableEntry->rangeTableId = joinTreeTableIndex;
+
+			tableEntryList = lappend(tableEntryList, tableEntry);
+		}
+	}
+
+	return tableEntryList;
+}
+
+
 /*
  * MultiTableNodeList builds a list of MultiTable nodes from the given table
  * entry list. A multi table node represents one entry from the range table
@@ -1560,7 +1595,8 @@ ExtractRangeTableRelationWalker(Node *node, List **rangeTableRelationList)
 	foreach(rangeTableCell, rangeTableList)
 	{
 		RangeTblEntry *rangeTableEntry = (RangeTblEntry *) lfirst(rangeTableCell);
-		if (rangeTableEntry->rtekind == RTE_RELATION)
+//		ereport(WARNING, (errmsg("RTE : %s", nodeToString(rangeTableEntry))));
+		if (rangeTableEntry->rtekind == RTE_RELATION && rangeTableEntry->relkind == 'r')
 		{
 			(*rangeTableRelationList) = lappend(*rangeTableRelationList, rangeTableEntry);
 		}
