@@ -397,7 +397,7 @@ AcquireExecutorShardLock(Task *task, CmdType commandType)
 		 * concurrently.
 		 */
 
-		LockShardListResources(task->selectShardList, ExclusiveLock);
+		LockRelationShardListResources(task->relationShardList, ExclusiveLock);
 	}
 }
 
@@ -477,7 +477,7 @@ AcquireExecutorMultiShardLocks(List *taskList)
 			 * concurrently.
 			 */
 
-			LockShardListResources(task->selectShardList, ExclusiveLock);
+			LockRelationShardListResources(task->relationShardList, ExclusiveLock);
 		}
 	}
 }
