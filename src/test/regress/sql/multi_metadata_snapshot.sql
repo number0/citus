@@ -80,7 +80,7 @@ SELECT * FROM pg_dist_shard_placement ORDER BY shardid;
 -- Check that pg_dist_colocation is not synced
 SELECT * FROM pg_dist_colocation ORDER BY colocationid;
 
--- Check that repeated calls to sync_metadata has no side effects
+-- Check that repeated calls to sync_metadata_to_node has no side effects
 \c - - - :master_port
 SELECT sync_metadata_to_node('localhost', :worker_1_port);
 SELECT sync_metadata_to_node('localhost', :worker_1_port);
@@ -91,6 +91,13 @@ SELECT * FROM pg_dist_partition ORDER BY logicalrelid;
 SELECT * FROM pg_dist_shard ORDER BY shardid;
 SELECT * FROM pg_dist_shard_placement ORDER BY shardid;
 \d mx_testing_schema.mx_test_table
+
+-- Make sure that sync_metadata_to_node cannot be called inside a transaction
+BEGIN;
+SELECT sync_metadata_to_node('localhost', :worker_2_port);
+ROLLBACK;
+
+SELECT hasmetadata FROM pg_dist_node WHERE nodeport=:worker_2_port;
 
 -- Cleanup
 DROP TABLE mx_testing_schema.mx_test_table;
