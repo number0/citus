@@ -62,9 +62,6 @@ SELECT get_and_purge_connection('localhost', :worker_port);
 -- squelch WARNINGs that contain worker_port
 SET client_min_messages TO ERROR;
 
--- should not be able to see table anymore
-SELECT count_remote_temp_table_rows('localhost', :worker_port);
-
 -- recreate once more
 SELECT initialize_remote_temp_table('localhost', :worker_port);
 

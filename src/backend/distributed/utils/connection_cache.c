@@ -51,7 +51,7 @@ static void ReportRemoteError(PGconn *connection, PGresult *result, bool raiseEr
 PGconn *
 GetOrEstablishConnection(char *nodeName, int32 nodePort)
 {
-	int connectionFlags = SESSION_LIFESPAN;
+	int connectionFlags = 0;
 	PGconn *connection = NULL;
 	MultiConnection *multiConnection =
 		GetNodeConnection(connectionFlags, nodeName, nodePort);

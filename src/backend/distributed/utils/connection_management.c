@@ -217,11 +217,6 @@ StartNodeUserDatabaseConnection(uint32 flags, const char *hostname, int32 port, 
 		connection = FindAvailableConnection(entry->connections, flags);
 		if (connection)
 		{
-			if (flags & SESSION_LIFESPAN)
-			{
-				connection->sessionLifespan = true;
-			}
-
 			return connection;
 		}
 	}
@@ -237,10 +232,7 @@ StartNodeUserDatabaseConnection(uint32 flags, const char *hostname, int32 port, 
 
 	MemoryContextSwitchTo(oldContext);
 
-	if (flags & SESSION_LIFESPAN)
-	{
-		connection->sessionLifespan = true;
-	}
+	entry->connectionCount++;
 
 	return connection;
 }
@@ -306,32 +298,45 @@ GetConnectionFromPGconn(struct pg_conn *pqConn)
 
 
 /*
- * Close a previously established connection.
+ * Close a previously established connection unless the number
+ * of open connections would fall below 1.
  */
 void
 CloseConnection(MultiConnection *connection)
 {
 	ConnectionHashKey key;
+	ConnectionHashEntry *entry = NULL;
 	bool found;
-
-	/* close connection */
-	PQfinish(connection->conn);
-	connection->conn = NULL;
 
 	strlcpy(key.hostname, connection->hostname, MAX_NODE_LENGTH);
 	key.port = connection->port;
 	strlcpy(key.user, connection->user, NAMEDATALEN);
 	strlcpy(key.database, connection->database, NAMEDATALEN);
 
-	hash_search(ConnectionHash, &key, HASH_FIND, &found);
+	entry = hash_search(ConnectionHash, &key, HASH_FIND, &found);
 
 	if (found)
 	{
-		/* unlink from list */
-		dlist_delete(&connection->node);
+		if (entry->connectionCount > 1 ||
+			PQstatus(connection->conn) != CONNECTION_OK ||
+			PQtransactionStatus(connection->conn) != PQTRANS_IDLE)
+		{
+			/* close connection */
+			PQfinish(connection->conn);
+			connection->conn = NULL;
 
-		/* we leave the per-host entry alive */
-		pfree(connection);
+			/* unlink from list */
+			dlist_delete(&connection->node);
+
+			/* we leave the per-host entry alive */
+			pfree(connection);
+
+			entry->connectionCount--;
+		}
+		else
+		{
+			UnclaimConnection(connection);
+		}
 	}
 	else
 	{
@@ -616,7 +621,7 @@ AfterXactHostConnectionHandling(ConnectionHashEntry *entry, bool isCommit)
 		/*
 		 * Preserve session lifespan connections if they are still healthy.
 		 */
-		if (!connection->sessionLifespan ||
+		if (entry->connectionCount > 1 ||
 			PQstatus(connection->conn) != CONNECTION_OK ||
 			PQtransactionStatus(connection->conn) != PQTRANS_IDLE)
 		{
@@ -627,6 +632,8 @@ AfterXactHostConnectionHandling(ConnectionHashEntry *entry, bool isCommit)
 			dlist_delete(iter.cur);
 
 			pfree(connection);
+
+			entry->connectionCount--;
 		}
 		else
 		{

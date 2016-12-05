@@ -31,10 +31,7 @@ struct MemoryContextData;
 enum MultiConnectionMode
 {
 	/* force establishment of a new connection */
-	FORCE_NEW_CONNECTION = 1 << 0,
-
-	/* mark returned connection as having session lifespan */
-	SESSION_LIFESPAN = 1 << 1
+	FORCE_NEW_CONNECTION = 1 << 0
 };
 
 
@@ -51,9 +48,6 @@ typedef struct MultiConnection
 
 	/* underlying libpq connection */
 	struct pg_conn *conn;
-
-	/* is the connection intended to be kept after transaction end */
-	bool sessionLifespan;
 
 	/* is the connection currently in use, and shouldn't be used by anything else */
 	bool claimedExclusively;
@@ -88,6 +82,7 @@ typedef struct ConnectionHashEntry
 {
 	ConnectionHashKey key;
 	dlist_head *connections;
+	int connectionCount;
 } ConnectionHashEntry;
 
 /* the hash table */
