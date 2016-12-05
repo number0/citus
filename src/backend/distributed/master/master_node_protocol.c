@@ -633,7 +633,8 @@ GetTableDDLEvents(Oid relationId)
 	if (strncmp(schemaName, "public", NAMEDATALEN) != 0)
 	{
 		StringInfo schemaNameDef = makeStringInfo();
-		appendStringInfo(schemaNameDef, CREATE_SCHEMA_COMMAND, schemaName);
+		char *ownerName = SchemaOwner(schemaId);
+		appendStringInfo(schemaNameDef, CREATE_SCHEMA_COMMAND, schemaName, ownerName);
 
 		tableDDLEventList = lappend(tableDDLEventList, schemaNameDef->data);
 	}

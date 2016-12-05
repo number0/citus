@@ -15,9 +15,11 @@
 #include "miscadmin.h"
 
 #include "access/htup_details.h"
+#include "access/sysattr.h"
 #include "access/xact.h"
 #include "catalog/indexing.h"
 #include "catalog/pg_type.h"
+#include "catalog/pg_namespace.h"
 #include "distributed/citus_nodes.h"
 #include "distributed/master_metadata_utility.h"
 #include "distributed/master_protocol.h"
@@ -761,6 +763,50 @@ TableOwner(Oid relationId)
 	ReleaseSysCache(tuple);
 
 	return GetUserNameFromId(userId, false);
+}
+
+
+/*
+ * SchemaOwner returns the name of the owner of the specified schema.
+ */
+char *
+SchemaOwner(Oid schemaId)
+{
+	const int scanKeyCount = 1;
+
+	Relation namespaceRelation = heap_open(NamespaceRelationId, AccessShareLock);
+	ScanKeyData scanKeyData[scanKeyCount];
+	SysScanDesc scanDescriptor = NULL;
+	HeapTuple tuple = NULL;
+	char *ownerName = NULL;
+
+	/* start scan */
+	ScanKeyInit(&scanKeyData[0],
+				ObjectIdAttributeNumber,
+				BTEqualStrategyNumber, F_OIDEQ,
+				ObjectIdGetDatum(schemaId));
+
+	scanDescriptor = systable_beginscan(namespaceRelation, NamespaceOidIndexId, true,
+										SnapshotSelf, 1, &scanKeyData[0]);
+	tuple = systable_getnext(scanDescriptor);
+
+	if (HeapTupleIsValid(tuple))
+	{
+		Form_pg_namespace nsptup = (Form_pg_namespace) GETSTRUCT(tuple);
+		Oid ownerId = nsptup->nspowner;
+
+		ownerName = GetUserNameFromId(ownerId, false);
+	}
+	else
+	{
+		/* if the schema is not found, then return the name of current user */
+		ownerName = GetUserNameFromId(GetUserId(), false);
+	}
+
+	systable_endscan(scanDescriptor);
+	heap_close(namespaceRelation, NoLock);
+
+	return ownerName;
 }
 
 

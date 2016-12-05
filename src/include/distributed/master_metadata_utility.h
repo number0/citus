@@ -87,5 +87,6 @@ extern char * TableOwner(Oid relationId);
 extern void EnsureTablePermissions(Oid relationId, AclMode mode);
 extern void EnsureTableOwner(Oid relationId);
 extern void EnsureSuperUser(void);
+extern char * SchemaOwner(Oid schemaId);
 
 #endif   /* MASTER_METADATA_UTILITY_H */
