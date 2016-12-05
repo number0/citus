@@ -123,11 +123,15 @@ static void ErrorIfDistributedRenameStmt(RenameStmt *renameStatement);
 /* Local functions forward declarations for helper functions */
 static void CreateLocalTable(RangeVar *relation, char *nodeName, int32 nodePort);
 static bool IsAlterTableRenameStmt(RenameStmt *renameStatement);
-static void ExecuteDistributedDDLCommand(Oid leftRelationId, Oid rightRelationId,
-										 const char *ddlCommandString, bool isTopLevel);
+static void ExecuteDistributedDDLCommand(Oid relationId, const char *ddlCommandString,
+										 bool isTopLevel);
+static void ExecuteDistributedForeingKeyCommand(Oid leftRelationId, Oid rightRelationId,
+												const char *ddlCommandString,
+												bool isTopLevel);
 static void ShowNoticeIfNotUsing2PC(void);
-static List * DDLTaskList(Oid leftRelationId, Oid rightRelationId, const
-						  char *commandString);
+static List * DDLTaskList(Oid relationId, const char *commandString);
+static List * ForeignKeyTaskList(Oid leftRelationId, Oid rightRelationId,
+								 const char *commandString);
 static void RangeVarCallbackForDropIndex(const RangeVar *rel, Oid relOid, Oid oldRelOid,
 										 void *arg);
 static void CheckCopyPermissions(CopyStmt *copyStatement);
@@ -599,7 +603,6 @@ ProcessIndexStmt(IndexStmt *createIndexStatement, const char *createIndexCommand
 	{
 		Relation relation = NULL;
 		Oid relationId = InvalidOid;
-		Oid rightRelationId = InvalidOid;
 		bool isDistributedRelation = false;
 		char *namespaceName = NULL;
 		LOCKMODE lockmode = ShareLock;
@@ -645,8 +648,7 @@ ProcessIndexStmt(IndexStmt *createIndexStatement, const char *createIndexCommand
 			/* if index does not exist, send the command to workers */
 			if (!OidIsValid(indexRelationId))
 			{
-				ExecuteDistributedDDLCommand(relationId, rightRelationId,
-											 createIndexCommand, isTopLevel);
+				ExecuteDistributedDDLCommand(relationId, createIndexCommand, isTopLevel);
 			}
 			else if (!createIndexStatement->if_not_exists)
 			{
@@ -676,7 +678,6 @@ ProcessDropIndexStmt(DropStmt *dropIndexStatement, const char *dropIndexCommand,
 	ListCell *dropObjectCell = NULL;
 	Oid distributedIndexId = InvalidOid;
 	Oid distributedRelationId = InvalidOid;
-	Oid rightRelationId = InvalidOid;
 
 	Assert(dropIndexStatement->removeType == OBJECT_INDEX);
 
@@ -741,8 +742,7 @@ ProcessDropIndexStmt(DropStmt *dropIndexStatement, const char *dropIndexCommand,
 		ErrorIfUnsupportedDropIndexStmt(dropIndexStatement);
 
 		/* if it is supported, go ahead and execute the command */
-		ExecuteDistributedDDLCommand(distributedRelationId, rightRelationId,
-									 dropIndexCommand, isTopLevel);
+		ExecuteDistributedDDLCommand(distributedRelationId, dropIndexCommand, isTopLevel);
 	}
 
 	return (Node *) dropIndexStatement;
@@ -829,8 +829,15 @@ ProcessAlterTableStmt(AlterTableStmt *alterTableStatement, const char *alterTabl
 		}
 	}
 
-	ExecuteDistributedDDLCommand(leftRelationId, rightRelationId, alterTableCommand,
-								 isTopLevel);
+	if (rightRelationId)
+	{
+		ExecuteDistributedForeingKeyCommand(leftRelationId, rightRelationId,
+											alterTableCommand, isTopLevel);
+	}
+	else
+	{
+		ExecuteDistributedDDLCommand(leftRelationId, alterTableCommand, isTopLevel);
+	}
 
 	return (Node *) alterTableStatement;
 }
@@ -1205,8 +1212,8 @@ ErrorIfUnsupportedAlterTableStmt(AlterTableStmt *alterTableStatement)
 				 * column must be at the same place in both referencing and referenced
 				 * side of the foreign key constraint
 				 */
-				referencedTableAttr = constraint->pk_attrs->head;
-				foreach(referencingTableAttr, constraint->fk_attrs)
+				forboth(referencingTableAttr, constraint->fk_attrs,
+						referencedTableAttr, constraint->pk_attrs)
 				{
 					char *referencingAttrName = strVal(lfirst(referencingTableAttr));
 					char *referencedAttrName = strVal(lfirst(referencedTableAttr));
@@ -1220,8 +1227,6 @@ ErrorIfUnsupportedAlterTableStmt(AlterTableStmt *alterTableStatement)
 					{
 						foreignConstraintOnPartitionColumn = true;
 					}
-
-					referencedTableAttr = referencedTableAttr->next;
 				}
 
 				if (!foreignConstraintOnPartitionColumn)
@@ -1581,15 +1586,10 @@ IsAlterTableRenameStmt(RenameStmt *renameStmt)
  * used for extra safety. In the commit protocol, a BEGIN is sent after connection to
  * each shard placement and COMMIT/ROLLBACK is handled by
  * CompleteShardPlacementTransactions function.
- *
- * leftRelationId is the relation id of actual distributed table which given DDL command
- * is applied. rightRelationId is used if there is another relation which is affected by
- * executed DDL command. At the moment it is only used for passing referenced table id
- * around for ALTER TABLE ... ADD CONSTRAINT FOREIGN KEY queries.
  */
 static void
-ExecuteDistributedDDLCommand(Oid leftRelationId, Oid rightRelationId,
-							 const char *ddlCommandString, bool isTopLevel)
+ExecuteDistributedDDLCommand(Oid relationId, const char *ddlCommandString,
+							 bool isTopLevel)
 {
 	List *taskList = NIL;
 
@@ -1603,7 +1603,41 @@ ExecuteDistributedDDLCommand(Oid leftRelationId, Oid rightRelationId,
 
 	ShowNoticeIfNotUsing2PC();
 
-	taskList = DDLTaskList(leftRelationId, rightRelationId, ddlCommandString);
+	taskList = DDLTaskList(relationId, ddlCommandString);
+
+	ExecuteModifyTasksWithoutResults(taskList);
+}
+
+
+/*
+ * ExecuteDistributedForeingKeyCommand applies a given foreign key command to the given
+ * distributed table in a distributed transaction. If the multi shard commit protocol is
+ * in its default value of '1pc', then a notice message indicating that '2pc' might be
+ * used for extra safety. In the commit protocol, a BEGIN is sent after connection to
+ * each shard placement and COMMIT/ROLLBACK is handled by
+ * CompleteShardPlacementTransactions function.
+ *
+ * leftRelationId is the relation id of actual distributed table which given foreign key
+ * command is applied. rightRelationId is the relation id of distributed table which
+ * foreign key refers to.
+ */
+static void
+ExecuteDistributedForeingKeyCommand(Oid leftRelationId, Oid rightRelationId,
+									const char *ddlCommandString, bool isTopLevel)
+{
+	List *taskList = NIL;
+
+	if (XactModificationLevel == XACT_MODIFICATION_DATA)
+	{
+		ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+						errmsg("distributed DDL commands must not appear within "
+							   "transaction blocks containing single-shard data "
+							   "modifications")));
+	}
+
+	ShowNoticeIfNotUsing2PC();
+
+	taskList = ForeignKeyTaskList(leftRelationId, rightRelationId, ddlCommandString);
 
 	ExecuteModifyTasksWithoutResults(taskList);
 }
@@ -1629,16 +1663,66 @@ ShowNoticeIfNotUsing2PC(void)
 
 
 /*
- * DDLCommandList builds a list of tasks to execute a DDL command on a
+ * DDLTaskList builds a list of tasks to execute a DDL command on a
  * given list of shards.
- *
- * leftRelationId is the relation id of actual distributed table which given DDL command
- * is applied. rightRelationId is used if there is another relation which is affected by
- * executed DDL command. At the moment it is only used for passing referenced table id
- * around for ALTER TABLE ... ADD CONSTRAINT FOREIGN KEY queries.
  */
 static List *
-DDLTaskList(Oid leftRelationId, Oid rightRelationId, const char *commandString)
+DDLTaskList(Oid relationId, const char *commandString)
+{
+	List *taskList = NIL;
+	List *shardIntervalList = LoadShardIntervalList(relationId);
+	ListCell *shardIntervalCell = NULL;
+	Oid schemaId = get_rel_namespace(relationId);
+	char *schemaName = get_namespace_name(schemaId);
+	char *escapedSchemaName = quote_literal_cstr(schemaName);
+	char *escapedCommandString = quote_literal_cstr(commandString);
+	uint64 jobId = INVALID_JOB_ID;
+	int taskId = 1;
+
+	/* lock metadata before getting placement lists */
+	LockShardListMetadata(shardIntervalList, ShareLock);
+
+	foreach(shardIntervalCell, shardIntervalList)
+	{
+		ShardInterval *shardInterval = (ShardInterval *) lfirst(shardIntervalCell);
+		uint64 shardId = shardInterval->shardId;
+		StringInfo applyCommand = makeStringInfo();
+		Task *task = NULL;
+
+		/*
+		 * If rightRelationId is not InvalidOid, instead of worker_apply_shard_ddl_command
+		 * we use worker_apply_inter_shard_ddl_command.
+		 */
+		appendStringInfo(applyCommand, WORKER_APPLY_SHARD_DDL_COMMAND, shardId,
+						 escapedSchemaName, escapedCommandString);
+
+		task = CitusMakeNode(Task);
+		task->jobId = jobId;
+		task->taskId = taskId++;
+		task->taskType = SQL_TASK;
+		task->queryString = applyCommand->data;
+		task->dependedTaskList = NULL;
+		task->anchorShardId = shardId;
+		task->taskPlacementList = FinalizedShardPlacementList(shardId);
+
+		taskList = lappend(taskList, task);
+	}
+
+	return taskList;
+}
+
+
+/*
+ * ForeignKeyTaskList builds a list of tasks to execute a foreign key command on a
+ * shards of given list of distributed table.
+ *
+ * leftRelationId is the relation id of actual distributed table which given foreign key
+ * command is applied. rightRelationId is the relation id of distributed table which
+ * foreign key refers to.
+ */
+static List *
+ForeignKeyTaskList(Oid leftRelationId, Oid rightRelationId,
+				   const char *commandString)
 {
 	List *taskList = NIL;
 
@@ -1648,11 +1732,11 @@ DDLTaskList(Oid leftRelationId, Oid rightRelationId, const char *commandString)
 	char *leftSchemaName = get_namespace_name(leftSchemaId);
 	char *escapedLeftSchemaName = quote_literal_cstr(leftSchemaName);
 
-	List *rightShardList = NIL;
+	List *rightShardList = LoadShardIntervalList(rightRelationId);
 	ListCell *rightShardCell = NULL;
-	Oid rightSchemaId = InvalidOid;
-	char *rightSchemaName = NULL;
-	char *escapedRightSchemaName = NULL;
+	Oid rightSchemaId = get_rel_namespace(rightRelationId);
+	char *rightSchemaName = get_namespace_name(rightSchemaId);
+	char *escapedRightSchemaName = quote_literal_cstr(rightSchemaName);
 
 	char *escapedCommandString = quote_literal_cstr(commandString);
 	uint64 jobId = INVALID_JOB_ID;
@@ -1661,46 +1745,19 @@ DDLTaskList(Oid leftRelationId, Oid rightRelationId, const char *commandString)
 	/* lock metadata before getting placement lists */
 	LockShardListMetadata(leftShardList, ShareLock);
 
-	/*
-	 * If rightRelationId is not InvalidOid, we also set variables related with right
-	 * relation.
-	 */
-	if (rightRelationId != InvalidOid)
-	{
-		rightShardList = LoadShardIntervalList(rightRelationId);
-		rightShardCell = rightShardList->head;
-		rightSchemaId = get_rel_namespace(rightRelationId);
-		rightSchemaName = get_namespace_name(rightSchemaId);
-		escapedRightSchemaName = quote_literal_cstr(rightSchemaName);
-	}
-
-	foreach(leftShardCell, leftShardList)
+	forboth(leftShardCell, leftShardList, rightShardCell, rightShardList)
 	{
 		ShardInterval *leftShardInterval = (ShardInterval *) lfirst(leftShardCell);
 		uint64 leftShardId = leftShardInterval->shardId;
 		StringInfo applyCommand = makeStringInfo();
 		Task *task = NULL;
 
-		/*
-		 * If rightRelationId is not InvalidOid, instead of worker_apply_shard_ddl_command
-		 * we use worker_apply_inter_shard_ddl_command.
-		 */
-		if (rightRelationId == InvalidOid)
-		{
-			appendStringInfo(applyCommand, WORKER_APPLY_SHARD_DDL_COMMAND, leftShardId,
-							 escapedLeftSchemaName, escapedCommandString);
-		}
-		else
-		{
-			ShardInterval *rightShardInterval = (ShardInterval *) lfirst(rightShardCell);
-			uint64 rightShardId = rightShardInterval->shardId;
+		ShardInterval *rightShardInterval = (ShardInterval *) lfirst(rightShardCell);
+		uint64 rightShardId = rightShardInterval->shardId;
 
-			appendStringInfo(applyCommand, WORKER_APPLY_INTER_SHARD_DDL_COMMAND,
-							 leftShardId, escapedLeftSchemaName, rightShardId,
-							 escapedRightSchemaName, escapedCommandString);
-
-			rightShardCell = rightShardCell->next;
-		}
+		appendStringInfo(applyCommand, WORKER_APPLY_INTER_SHARD_DDL_COMMAND,
+						 leftShardId, escapedLeftSchemaName, rightShardId,
+						 escapedRightSchemaName, escapedCommandString);
 
 		task = CitusMakeNode(Task);
 		task->jobId = jobId;
@@ -2040,7 +2097,6 @@ ReplicateGrantStmt(Node *parsetree)
 	{
 		RangeVar *relvar = (RangeVar *) lfirst(objectCell);
 		Oid relOid = RangeVarGetRelid(relvar, NoLock, false);
-		Oid rightRelationId = InvalidOid;
 		const char *grantOption = "";
 		bool isTopLevel = true;
 
@@ -2075,7 +2131,7 @@ ReplicateGrantStmt(Node *parsetree)
 							 granteesString.data);
 		}
 
-		ExecuteDistributedDDLCommand(relOid, rightRelationId, ddlString.data, isTopLevel);
+		ExecuteDistributedDDLCommand(relOid, ddlString.data, isTopLevel);
 		resetStringInfo(&ddlString);
 	}
 }
