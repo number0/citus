@@ -167,10 +167,13 @@ BeginTransactionOnShardPlacements(uint64 shardId, char *userName)
 		MemoryContextSwitchTo(oldContext);
 
 		/* now that connection is tracked, issue BEGIN */
-		result = PQexec(connection, "BEGIN");
-		if (PQresultStatus(result) != PGRES_COMMAND_OK)
+		if (MultiShardCommitProtocol > COMMIT_PROTOCOL_BARE)
 		{
-			ReraiseRemoteError(connection, result);
+			result = PQexec(connection, "BEGIN");
+			if (PQresultStatus(result) != PGRES_COMMAND_OK)
+			{
+				ReraiseRemoteError(connection, result);
+			}
 		}
 	}
 }
@@ -334,6 +337,11 @@ CompleteShardPlacementTransactions(XactEvent event, void *arg)
 	shardConnectionHash = NULL;
 	XactModificationLevel = XACT_MODIFICATION_NONE;
 	subXactAbortAttempted = false;
+
+	if (MultiShardCommitProtocol == COMMIT_PROTOCOL_BARE)
+	{
+		MultiShardCommitProtocol = SavedMultiShardCommitProtocol;
+	}
 }
 
 

@@ -22,8 +22,9 @@
 /* Enumeration that defines the different commit protocols available */
 typedef enum
 {
-	COMMIT_PROTOCOL_1PC = 0,
-	COMMIT_PROTOCOL_2PC = 1
+	COMMIT_PROTOCOL_BARE = 0,
+	COMMIT_PROTOCOL_1PC = 1,
+	COMMIT_PROTOCOL_2PC = 2
 } CommitProtocolType;
 
 /* Enumeration that defines different remote transaction states */
@@ -53,6 +54,7 @@ typedef struct TransactionConnection
 
 /* config variable managed via guc.c */
 extern int MultiShardCommitProtocol;
+extern int SavedMultiShardCommitProtocol;
 
 
 /* Functions declarations for transaction and connection management */

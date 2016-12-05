@@ -854,6 +854,10 @@ ProcessVacuumStmt(VacuumStmt *vacuumStmt, const char *vacuumCommand, bool isTopL
 
 	taskList = VacuumTaskList(relationId, vacuumStmt);
 
+	SavedMultiShardCommitProtocol = MultiShardCommitProtocol;
+	MultiShardCommitProtocol = COMMIT_PROTOCOL_BARE;
+	ExecuteModifyTasksWithoutResults(taskList);
+
 	return (Node *) vacuumStmt;
 }
 
@@ -900,9 +904,6 @@ VacuumTaskList(Oid relationId, VacuumStmt *vacuumStmt)
 
 		taskList = lappend(taskList, task);
 	}
-
-	ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
-					errmsg("VACUUM of distributed tables is not supported")));
 
 	return taskList;
 }

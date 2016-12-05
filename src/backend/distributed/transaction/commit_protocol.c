@@ -28,6 +28,7 @@ static uint32 DistributedTransactionId = 0;
 
 /* the commit protocol to use for COPY commands */
 int MultiShardCommitProtocol = COMMIT_PROTOCOL_1PC;
+int SavedMultiShardCommitProtocol = COMMIT_PROTOCOL_BARE;
 
 
 /*
@@ -128,7 +129,8 @@ AbortRemoteTransactions(List *connectionList)
 
 			PQclear(result);
 		}
-		else if (transactionConnection->transactionState == TRANSACTION_STATE_OPEN)
+		else if (MultiShardCommitProtocol > COMMIT_PROTOCOL_BARE &&
+				 transactionConnection->transactionState == TRANSACTION_STATE_OPEN)
 		{
 			/* try to roll back cleanly, if it fails then we won't commit anyway */
 			result = PQexec(connection, "ROLLBACK");
