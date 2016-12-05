@@ -92,12 +92,19 @@ MultiClientConnect(const char *nodeName, uint32 nodePort, const char *nodeDataba
 	MultiConnection *connection = NULL;
 	ConnStatusType connStatusType = CONNECTION_OK;
 	int32 connectionId = AllocateConnectionId();
-	int connectionFlags = NEW_CONNECTION; /* no cached connections for now */
+	int connectionFlags = FORCE_NEW_CONNECTION; /* no cached connections for now */
 
 	if (connectionId == INVALID_CONNECTION_ID)
 	{
 		ereport(WARNING, (errmsg("could not allocate connection in connection pool")));
 		return connectionId;
+	}
+
+	if (XactModificationLevel > XACT_MODIFICATION_NONE)
+	{
+		ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+						errmsg("cannot open new connections after the first modification "
+							   "command within a transaction")));
 	}
 
 	/* establish synchronous connection to worker node */
@@ -132,12 +139,19 @@ MultiClientConnectStart(const char *nodeName, uint32 nodePort, const char *nodeD
 	MultiConnection *connection = NULL;
 	ConnStatusType connStatusType = CONNECTION_OK;
 	int32 connectionId = AllocateConnectionId();
-	int connectionFlags = NEW_CONNECTION; /* no cached connections for now */
+	int connectionFlags = FORCE_NEW_CONNECTION; /* no cached connections for now */
 
 	if (connectionId == INVALID_CONNECTION_ID)
 	{
 		ereport(WARNING, (errmsg("could not allocate connection in connection pool")));
 		return connectionId;
+	}
+
+	if (XactModificationLevel > XACT_MODIFICATION_NONE)
+	{
+		ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
+						errmsg("cannot open new connections after the first modification "
+							   "command within a transaction")));
 	}
 
 	/* prepare asynchronous request for worker node connection */

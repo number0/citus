@@ -148,13 +148,7 @@ GetNodeUserDatabaseConnection(uint32 flags, const char *hostname, int32 port, co
  *
  * If user or database are NULL, the current session's defaults are used. The
  * following flags influence connection establishment behaviour:
- * - NEW_CONNECTION - it is permitted to establish a new connection
- * - CACHED_CONNECTION - it is permitted to re-use an established connection
- * - SESSION_LIFESPAN - the connection should persist after transaction end
- * - FOR_DML - only meaningful for placement associated connections
- * - FOR_DDL - only meaningful for placement associated connections
- * - CRITICAL_CONNECTION - transaction failures on this connection fail the entire
- *   coordinated transaction
+ * - FORCE_NEW_CONNECTION - a new connection is required
  *
  * The returned connection has only been initiated, not fully
  * established. That's useful to allow parallel connection establishment. If
@@ -217,31 +211,19 @@ StartNodeUserDatabaseConnection(uint32 flags, const char *hostname, int32 port, 
 	}
 
 	/* if desired, check whether there's a usable connection */
-	if (flags & CACHED_CONNECTION)
+	if (!(flags & FORCE_NEW_CONNECTION))
 	{
 		/* check connection cache for a connection that's not already in use */
 		connection = FindAvailableConnection(entry->connections, flags);
 		if (connection)
+		{
+			if (flags & SESSION_LIFESPAN)
+			{
+				connection->sessionLifespan = true;
+			}
+
 			return connection;
-	}
-
-	/* no connection available, done if a new connection isn't desirable */
-	if (!(flags & NEW_CONNECTION))
-	{
-		return NULL;
-	}
-
-	/*
-	 * Check whether we're right now allowed to open new connections.
-	 *
-	 * FIXME: This should be removed soon, once all connections go through
-	 * this API.
-	 */
-	if (XactModificationLevel > XACT_MODIFICATION_DATA)
-	{
-		ereport(ERROR, (errcode(ERRCODE_ACTIVE_SQL_TRANSACTION),
-						errmsg("cannot open new connections after the first modification "
-							   "command within a transaction")));
+		}
 	}
 
 	/*
@@ -259,8 +241,6 @@ StartNodeUserDatabaseConnection(uint32 flags, const char *hostname, int32 port, 
 	{
 		connection->sessionLifespan = true;
 	}
-
-	connection->activeInTransaction = true;
 
 	return connection;
 }
@@ -282,32 +262,6 @@ FindAvailableConnection(dlist_head *connections, uint32 flags)
 			continue;
 		}
 
-		/*
-		 * If we're not allowed to open new connections right now, and the
-		 * current connection hasn't yet been used in this transaction, we
-		 * can't use it.
-		 */
-		if (!connection->activeInTransaction &&
-			XactModificationLevel > XACT_MODIFICATION_DATA)
-		{
-			continue;
-		}
-
-		if (flags & SESSION_LIFESPAN)
-		{
-			connection->sessionLifespan = true;
-		}
-		connection->activeInTransaction = true;
-
-		/*
-		 * One could argue for erroring out when the connection is in a
-		 * failed state. But that'd be a bad idea for two reasons:
-		 *
-		 * 1) Generally starting a connection might fail, after calling
-		 *    this function, so calling code needs to handle that anyway.
-		 * 2) This might be used in code that transparently handles
-		 *    connection failure.
-		 */
 		return connection;
 	}
 
@@ -660,9 +614,7 @@ AfterXactHostConnectionHandling(ConnectionHashEntry *entry, bool isCommit)
 		}
 
 		/*
-		 * Only let a connection life longer than a single transaction if
-		 * instructed to do so by the caller. We also skip doing so if
-		 * it's in a state that wouldn't allow us to run queries again.
+		 * Preserve session lifespan connections if they are still healthy.
 		 */
 		if (!connection->sessionLifespan ||
 			PQstatus(connection->conn) != CONNECTION_OK ||
@@ -678,9 +630,6 @@ AfterXactHostConnectionHandling(ConnectionHashEntry *entry, bool isCommit)
 		}
 		else
 		{
-			/* reset per-transaction state */
-			connection->activeInTransaction = false;
-
 			UnclaimConnection(connection);
 		}
 	}

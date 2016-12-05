@@ -30,23 +30,11 @@ struct MemoryContextData;
  */
 enum MultiConnectionMode
 {
-	/* allow establishment of new connections */
-	NEW_CONNECTION = 1 << 0,
+	/* force establishment of a new connection */
+	FORCE_NEW_CONNECTION = 1 << 0,
 
-	/* allow use of pre-established connections */
-	CACHED_CONNECTION = 1 << 1,
-
-	/* mark returned connection having session lifespan */
-	SESSION_LIFESPAN = 1 << 2,
-
-	/* the connection will be used for DML */
-	FOR_DML = 1 << 3,
-
-	/* the connection will be used for DDL */
-	FOR_DDL = 1 << 4,
-
-	/* failures on this connection will fail entire coordinated transaction */
-	CRITICAL_CONNECTION = 1 << 5
+	/* mark returned connection as having session lifespan */
+	SESSION_LIFESPAN = 1 << 1
 };
 
 
@@ -69,9 +57,6 @@ typedef struct MultiConnection
 
 	/* is the connection currently in use, and shouldn't be used by anything else */
 	bool claimedExclusively;
-
-	/* is the connection currently part of the coordinated transaction */
-	bool activeInTransaction;
 
 	/* time connection establishment was started, for timeout */
 	TimestampTz connectionStart;
