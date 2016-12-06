@@ -278,8 +278,17 @@ CREATE TABLE table2_groupF ( id int );
 SELECT create_reference_table('table2_groupF');
 
 -- check metadata
-SELECT * FROM pg_dist_colocation 
-    WHERE colocationid >= 1 AND colocationid < 1000 
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
+    ORDER BY colocationid;
+
+-- test mark_colocation_group_default()
+SELECT mark_colocation_group_default(7);
+SELECT mark_colocation_group_default(8);
+
+-- check metadata after mark_colocation_group_default() is run
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY colocationid;
 
 -- cross check with internal colocation API
@@ -327,12 +336,12 @@ UPDATE pg_dist_partition SET colocationid = 0
     WHERE colocationid >= 1 AND colocationid < 1000;
 
 -- check metadata
-SELECT * FROM pg_dist_colocation 
-    WHERE colocationid >= 1 AND colocationid < 1000 
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY colocationid;
 
 SELECT logicalrelid, colocationid FROM pg_dist_partition
-    WHERE colocationid >= 1 AND colocationid < 1000 
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY logicalrelid;
 
 -- first check failing cases
@@ -343,12 +352,12 @@ SELECT mark_tables_colocated('table1_groupB', ARRAY['table1_groupF']);
 SELECT mark_tables_colocated('table1_groupB', ARRAY['table2_groupB', 'table1_groupD']);
 
 -- check metadata to see failing calls didn't have any side effects
-SELECT * FROM pg_dist_colocation 
-    WHERE colocationid >= 1 AND colocationid < 1000 
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY colocationid;
 
 SELECT logicalrelid, colocationid FROM pg_dist_partition
-    WHERE colocationid >= 1 AND colocationid < 1000 
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY logicalrelid;
 
 -- check successfully cololated tables

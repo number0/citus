@@ -581,8 +581,8 @@ SELECT create_reference_table('table2_groupF');
 (1 row)
 
 -- check metadata
-SELECT * FROM pg_dist_colocation 
-    WHERE colocationid >= 1 AND colocationid < 1000 
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY colocationid;
  colocationid | shardcount | replicationfactor | distributioncolumntype | defaultgroup 
 --------------+------------+-------------------+------------------------+--------------
@@ -594,6 +594,36 @@ SELECT * FROM pg_dist_colocation
             7 |          2 |                 2 |                     23 | f
             8 |          3 |                 2 |                     23 | f
             9 |          3 |                 2 |                     23 | t
+           10 |          1 |                 2 |                     23 | t
+(9 rows)
+
+-- test mark_colocation_group_default()
+SELECT mark_colocation_group_default(7);
+ mark_colocation_group_default 
+-------------------------------
+ 
+(1 row)
+
+SELECT mark_colocation_group_default(8);
+ mark_colocation_group_default 
+-------------------------------
+ 
+(1 row)
+
+-- check metadata after mark_colocation_group_default() is run
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
+    ORDER BY colocationid;
+ colocationid | shardcount | replicationfactor | distributioncolumntype | defaultgroup 
+--------------+------------+-------------------+------------------------+--------------
+            2 |          2 |                 1 |                     23 | t
+            3 |          2 |                 2 |                     25 | t
+            4 |          4 |                 2 |                     23 | t
+            5 |          2 |                 2 |                     23 | f
+            6 |          2 |                 2 |                     23 | f
+            7 |          2 |                 2 |                     23 | t
+            8 |          3 |                 2 |                     23 | t
+            9 |          3 |                 2 |                     23 | f
            10 |          1 |                 2 |                     23 | t
 (9 rows)
 
@@ -749,15 +779,15 @@ DELETE FROM pg_dist_colocation
 UPDATE pg_dist_partition SET colocationid = 0
     WHERE colocationid >= 1 AND colocationid < 1000;
 -- check metadata
-SELECT * FROM pg_dist_colocation 
-    WHERE colocationid >= 1 AND colocationid < 1000 
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY colocationid;
  colocationid | shardcount | replicationfactor | distributioncolumntype | defaultgroup 
 --------------+------------+-------------------+------------------------+--------------
 (0 rows)
 
 SELECT logicalrelid, colocationid FROM pg_dist_partition
-    WHERE colocationid >= 1 AND colocationid < 1000 
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY logicalrelid;
  logicalrelid | colocationid 
 --------------+--------------
@@ -780,15 +810,15 @@ SELECT mark_tables_colocated('table1_groupB', ARRAY['table2_groupB', 'table1_gro
 ERROR:  cannot colocate tables table1_groupb and table1_groupd
 DETAIL:  Shard counts don't match for table1_groupb and table1_groupd.
 -- check metadata to see failing calls didn't have any side effects
-SELECT * FROM pg_dist_colocation 
-    WHERE colocationid >= 1 AND colocationid < 1000 
+SELECT * FROM pg_dist_colocation
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY colocationid;
  colocationid | shardcount | replicationfactor | distributioncolumntype | defaultgroup 
 --------------+------------+-------------------+------------------------+--------------
 (0 rows)
 
 SELECT logicalrelid, colocationid FROM pg_dist_partition
-    WHERE colocationid >= 1 AND colocationid < 1000 
+    WHERE colocationid >= 1 AND colocationid < 1000
     ORDER BY logicalrelid;
  logicalrelid | colocationid 
 --------------+--------------
